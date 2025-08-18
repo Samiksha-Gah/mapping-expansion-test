@@ -87,6 +87,8 @@
     <div class="toggle"><input type="checkbox" id="facToggle" checked><label>Facilities</label></div>
     <div class="toggle"><input type="checkbox" id="usgsToggle" checked><label>USGS EQ</label></div>
     <div class="toggle"><input type="checkbox" id="gdacsToggle" checked><label>GDACS</label></div>
+    <div class="toggle"><input type="checkbox" id="roadsToggle" checked><label>Roads</label></div>
+    <div class="toggle"><input type="checkbox" id="popToggle" checked><label>Population</label></div>
   </div>
 
   <div class="hr"></div>
@@ -164,6 +166,8 @@ function renderFacility(f){
   q('list').innerHTML='';
   q('details').innerHTML=`
     <div class="section"><h3>Core</h3>
+      <div class="kv"><b>Type</b> ${fmt(p.type)}</div>
+      <div class="kv"><b>Status</b> ${badge(p.status)}</div>
       <div class="kv"><b>Country</b> ${fmt(p.country)}</div>
       <div class="kv"><b>Owner</b> ${fmt(p.owner)}</div>
       <div class="kv"><b>Last updated</b> ${fmt(p.last_updated)}</div>
@@ -207,6 +211,7 @@ function loadUSGS(){
 function selectedEQ(){
   const m=hazFeature.properties.mag, r=magToKm(m);
   hazBuffer=turf.buffer(hazFeature,r,{units:'kilometers'});
+  q('details').innerHTML = '';   // Clear facility detail panel when EQ is clicked
   const exposed={type:'FeatureCollection',
     features:facFiltered.features.filter(pt=>turf.booleanPointInPolygon(pt,hazBuffer))};
   if(!map.getSource('hazb')){
@@ -262,6 +267,8 @@ terrainToggle.onchange=()=>{ terrainToggle.checked ? enableTerrain() : disableTe
 facToggle.onchange   =()=> map.setLayoutProperty('fac','visibility',facToggle.checked?'visible':'none');
 usgsToggle.onchange  =()=> map.setLayoutProperty('usgs','visibility',usgsToggle.checked?'visible':'none');
 gdacsToggle.onchange =()=> map.setLayoutProperty('gdacs','visibility',gdacsToggle.checked?'visible':'none');
+roadsToggle.onchange =()=> map.setLayoutProperty('roads','visibility',roadsToggle.checked?'visible':'none');
+popToggle.onchange   =()=> map.setLayoutProperty('pop','visibility',popToggle.checked?'visible':'none');
 
 /* ------------- Terrain toggle ------------- */
 function enableTerrain(){
@@ -285,6 +292,49 @@ map.on('load',()=>{
   loadFacilities();
   loadUSGS();
   loadGDACS();
+  // Add OSM major roads (from Mapbox Streets)
+map.addLayer({
+  'id': 'roads',
+  'type': 'line',
+  'source': {
+    'type': 'vector',
+    'url': 'mapbox://mapbox.mapbox-streets-v8'
+  },
+  'source-layer': 'road',
+  'layout': {
+    'visibility': 'visible'
+  },
+  'paint': {
+    'line-color': '#555',
+    'line-width': 1
+  }
+});
+// Add population density heatmap (Mapbox free data)
+map.addSource('pop', {
+  type: 'vector',
+  url: 'mapbox://mapbox.population-density-v1'
+});
+
+map.addLayer({
+  'id': 'pop',
+  'type': 'fill',
+  'source': 'pop',
+  'source-layer': 'pd',
+  'paint': {
+    'fill-color': [
+      'interpolate',
+      ['linear'],
+      ['get', 'density'],
+      0, 'rgba(255,255,255,0)',
+      10, '#f1eef6',
+      100, '#bdc9e1',
+      1000, '#74a9cf',
+      10000, '#0570b0'
+    ],
+    'fill-opacity': 0.5
+  }
+});
+
 });
 </script>
 </body>

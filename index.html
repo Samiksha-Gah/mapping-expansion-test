@@ -63,11 +63,8 @@
   <h1>IFRC Health Facility Exposure (MVP)</h1>
   <div class="legend">
     <span class="lg-eq"></span>USGS Earthquakes
-<span class="lg-fac" style="margin-left:10px"></span>IFRC Facilities
-<span class="lg-firms" style="margin-left:10px;background:#f97316"></span>FIRMS Fires
-<span class="lg-gdacs" style="margin-left:10px"></span>GDACS (beta, proxy needed)
-<span class="lg-hurr" style="margin-left:10px;background:#0ea5e9"></span>Hurricanes
-<span class="lg-flood" style="margin-left:10px;background:#38bdf8"></span>Flood Hazard
+    <span class="lg-gdacs" style="margin-left:10px"></span>GDACS (beta)
+    <span class="lg-fac" style="margin-left:10px"></span>IFRC Facilities
   </div>
 
   <div class="row">
@@ -92,9 +89,6 @@
     <div class="toggle"><input type="checkbox" id="gdacsToggle" checked><label>GDACS</label></div>
     <div class="toggle"><input type="checkbox" id="roadsToggle" checked><label>Roads</label></div>
     <div class="toggle"><input type="checkbox" id="popToggle" checked><label>Population</label></div>
-    <div class="toggle"><input type="checkbox" id="firmsToggle" checked><label>Fires (NASA FIRMS)</label></div>
-<div class="toggle"><input type="checkbox" id="stormsToggle" checked><label>Hurricanes (NOAA)</label></div>
-<div class="toggle"><input type="checkbox" id="floodsToggle" checked><label>Flood Hazard (COP)</label></div>
   </div>
 
   <div class="hr"></div>
@@ -109,14 +103,7 @@ mapboxgl.accessToken='pk.eyJ1Ijoic2FtaWtzaGFnYWhlcndhciIsImEiOiJjbWVnOHVjamcxNHF
 const FAC_CSV='facilities_dataset.csv';
 const USGS='https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_day.geojson';
 const GDACS='https://corsproxy.io/?https://www.gdacs.org/gdacsapi/api/events/geteventlist/';  // proxy
-// NASA Fires (FIRMS)
-const FIRMS24 = 'https://firms.modaps.eosdis.nasa.gov/mapserver/wfs?SERVICE=WFS&VERSION=1.1.0&REQUEST=GetFeature&TYPENAME=firms:Global_24h&outputFormat=application/json';
 
-// NOAA Hurricanes (uses active storms feed)
-const NOAA_HURRICANES = 'https://www.nhc.noaa.gov/CurrentStorms.json';
-
-// Copernicus Flood Hazard WMS (global demo layer)
-const COP_FLOOD_WMS = 'https://ows.globalfloodmonitor.org/gfm-ows/ows';
 let facAll={type:'FeatureCollection',features:[]}, facFiltered={type:'FeatureCollection',features:[]};
 let usgsFC=null, gdacsFC=null, hazFeature=null, hazBuffer=null;
 
@@ -274,82 +261,6 @@ function loadGDACS(){
   }).catch(()=>console.log('GDACS feed blocked (CORS) – continuing without it'));
 }
 
-/* ------------ NASA FIRMS Fires ------------ */
-function loadFIRMS() {
-  fetch(FIRMS24).then(r=>r.json()).then(j=>{
-    if (!j?.features) return;
-    map.addSource('firms',{type:'geojson',data:j});
-    map.addLayer({
-      id:'firms',
-      type:'circle',
-      source:'firms',
-      paint:{
-        'circle-radius':6,
-        'circle-color':'#f97316', // orange
-        'circle-stroke-width':1,
-        'circle-stroke-color':'#fff'
-      }
-    });
-    map.on('click','firms',e=>{
-      const f=e.features[0], p=f.properties;
-      q('summary').innerHTML = `<b>🔥 Active Fire</b><br>
-        Brightness: ${p.brightness || '—'}<br>
-        Confidence: ${p.confidence || '—'}<br>
-        Date: ${p.acq_date || '—'} ${p.acq_time || ''}`;
-      q('list').innerHTML=''; q('details').innerHTML=''; highlightNone();
-    });
-  }).catch(err=>console.error('FIRMS error',err));
-}
-
-/* ------------ NOAA Hurricanes ------------ */
-function loadHurricanes(){
-  fetch(NOAA_HURRICANES).then(r=>r.json()).then(j=>{
-    if(!j?.activeStorms) return;
-    // Convert simple storm list to GeoJSON points
-    const stormFeatures=j.activeStorms.map(s=>({
-      type:'Feature',
-      geometry:{type:'Point',coordinates:[s.lon,s.lat]},
-      properties:{name:s.stormName, basin:s.basin, adv:s.advisory}
-    }));
-    const stormsFC={type:'FeatureCollection',features:stormFeatures};
-    map.addSource('storms',{type:'geojson',data:stormsFC});
-    map.addLayer({
-      id:'storms',
-      type:'symbol',
-      source:'storms',
-      layout:{
-        'icon-image':'rocket-15', // placeholder icon
-        'icon-size':1.2,
-        'text-field':['get','name'],
-        'text-offset':[0,1.2],
-        'text-anchor':'top'
-      },
-      paint:{'text-color':'#0f172a'}
-    });
-    map.on('click','storms',e=>{
-      const p=e.features[0].properties;
-      q('summary').innerHTML = `<b>🌀 Hurricane</b> ${p.name}<br>Basin: ${p.basin} • Advisory: ${p.adv}`;
-      q('list').innerHTML=''; q('details').innerHTML=''; highlightNone();
-    });
-  }).catch(err=>console.error('Hurricanes error',err));
-}
-
-/* ------------ Copernicus Flood Hazard ------------ */
-function loadFlood(){
-  map.addSource('floods',{
-    type:'raster',
-    tiles:[`${COP_FLOOD_WMS}?service=WMS&request=GetMap&layers=glofas2:forecast&styles=&format=image/png&transparent=true&version=1.1.1&height=256&width=256&srs=EPSG:3857&bbox={bbox-epsg-3857}`],
-    tileSize:256
-  });
-  map.addLayer({
-    id:'floods',
-    type:'raster',
-    source:'floods',
-    layout:{visibility:'visible'},
-    paint:{'raster-opacity':0.5}
-  });
-}
-
 /* ------------- UI wiring ------------- */
 ['countryFilter','typeFilter','statusFilter','bedsMin'].forEach(id=>q(id).oninput=()=>{applyFilters();highlightNone();});
 terrainToggle.onchange=()=>{ terrainToggle.checked ? enableTerrain() : disableTerrain(); };
@@ -358,9 +269,6 @@ usgsToggle.onchange  =()=> map.setLayoutProperty('usgs','visibility',usgsToggle.
 gdacsToggle.onchange =()=> map.setLayoutProperty('gdacs','visibility',gdacsToggle.checked?'visible':'none');
 roadsToggle.onchange =()=> map.setLayoutProperty('roads','visibility',roadsToggle.checked?'visible':'none');
 popToggle.onchange   =()=> map.setLayoutProperty('pop','visibility',popToggle.checked?'visible':'none');
-firmsToggle.onchange  =()=> map.setLayoutProperty('firms','visibility',firmsToggle.checked?'visible':'none');
-stormsToggle.onchange =()=> map.setLayoutProperty('storms','visibility',stormsToggle.checked?'visible':'none');
-floodsToggle.onchange =()=> map.setLayoutProperty('floods','visibility',floodsToggle.checked?'visible':'none');
 
 /* ------------- Terrain toggle ------------- */
 function enableTerrain(){
@@ -384,9 +292,6 @@ map.on('load',()=>{
   loadFacilities();
   loadUSGS();
   loadGDACS();
-  loadFIRMS();
-  loadHurricanes();
-  loadFlood();
 // Add Mapbox Streets source if not already included by style
 if (!map.getSource('mapbox-streets')) {
   map.addSource('mapbox-streets', {

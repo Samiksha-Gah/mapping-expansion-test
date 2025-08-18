@@ -89,6 +89,7 @@
     <div class="toggle"><input type="checkbox" id="gdacsToggle" checked><label>GDACS</label></div>
     <div class="toggle"><input type="checkbox" id="roadsToggle" checked><label>Roads</label></div>
     <div class="toggle"><input type="checkbox" id="popToggle" checked><label>Population</label></div>
+    <div class="toggle"><input type="checkbox" id="satToggle"><label>Satellite Imagery</label></div>
   </div>
 
   <div class="hr"></div>
@@ -269,6 +270,7 @@ usgsToggle.onchange  =()=> map.setLayoutProperty('usgs','visibility',usgsToggle.
 gdacsToggle.onchange =()=> map.setLayoutProperty('gdacs','visibility',gdacsToggle.checked?'visible':'none');
 roadsToggle.onchange =()=> map.setLayoutProperty('roads','visibility',roadsToggle.checked?'visible':'none');
 popToggle.onchange   =()=> map.setLayoutProperty('pop','visibility',popToggle.checked?'visible':'none');
+satToggle.onchange = () => {map.setLayoutProperty('satellite', 'visibility', satToggle.checked ? 'visible' : 'none');};
 
 /* ------------- Terrain toggle ------------- */
 function enableTerrain(){
@@ -326,6 +328,21 @@ map.addLayer({
   'layout': { 'visibility': 'visible' },
   'paint': { 'raster-opacity': 0.5 }
 });
+// --- Mapbox Satellite Imagery ---
+map.addSource('satellite', {
+  'type': 'raster',
+  'url': 'mapbox://mapbox.satellite',
+  'tileSize': 256
+});
+
+map.addLayer({
+  'id': 'satellite',
+  'type': 'raster',
+  'source': 'satellite',
+  'layout': {
+    'visibility': 'none'   // start hidden until toggle
+  }
+});  
 
 });
 </script>

@@ -102,7 +102,7 @@
 mapboxgl.accessToken='pk.eyJ1Ijoic2FtaWtzaGFnYWhlcndhciIsImEiOiJjbWVnOHVjamcxNHFwMm5xNHJscHdxYjdqIn0.x2xdpJyWndbT007njbAKEA';         // ← replace once
 const FAC_CSV='facilities_dataset.csv';
 const USGS='https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_day.geojson';
-const GDACS='https://www.gdacs.org/gdacsapi/api/events/geteventlist/'; // may CORS-fail
+const GDACS='https://cors-anywhere.herokuapp.com/https://www.gdacs.org/gdacsapi/api/events/geteventlist/';  // proxy
 
 let facAll={type:'FeatureCollection',features:[]}, facFiltered={type:'FeatureCollection',features:[]};
 let usgsFC=null, gdacsFC=null, hazFeature=null, hazBuffer=null;
@@ -292,47 +292,39 @@ map.on('load',()=>{
   loadFacilities();
   loadUSGS();
   loadGDACS();
-  // Add OSM major roads (from Mapbox Streets)
+// Add Mapbox Streets source if not already included by style
+if (!map.getSource('mapbox-streets')) {
+  map.addSource('mapbox-streets', {
+    type: 'vector',
+    url: 'mapbox://mapbox.mapbox-streets-v8'
+  });
+}
+
 map.addLayer({
   'id': 'roads',
   'type': 'line',
-  'source': {
-    'type': 'vector',
-    'url': 'mapbox://mapbox.mapbox-streets-v8'
-  },
+  'source': 'mapbox-streets',
   'source-layer': 'road',
-  'layout': {
-    'visibility': 'visible'
-  },
+  'layout': {'visibility':'visible'},
   'paint': {
     'line-color': '#555',
     'line-width': 1
   }
 });
-// Add population density heatmap (Mapbox free data)
-map.addSource('pop', {
-  type: 'vector',
-  url: 'mapbox://mapbox.population-density-v1'
+map.addSource('worldpop', {
+  'type': 'raster',
+  'tiles': [
+    'https://tiles.arcgis.com/tiles/DO4gTjwJVIJ7O9Ca/arcgis/rest/services/GHS_POP_2015/MapServer/tile/{z}/{y}/{x}'
+  ],
+  'tileSize': 256
 });
 
 map.addLayer({
-  'id': 'pop',
-  'type': 'fill',
-  'source': 'pop',
-  'source-layer': 'pd',
-  'paint': {
-    'fill-color': [
-      'interpolate',
-      ['linear'],
-      ['get', 'density'],
-      0, 'rgba(255,255,255,0)',
-      10, '#f1eef6',
-      100, '#bdc9e1',
-      1000, '#74a9cf',
-      10000, '#0570b0'
-    ],
-    'fill-opacity': 0.5
-  }
+  'id': 'worldpop',
+  'type': 'raster',
+  'source': 'worldpop',
+  'layout': {'visibility': 'visible'},
+  'paint': {'raster-opacity': 0.5}
 });
 
 });

@@ -314,7 +314,7 @@ map.addLayer({
 map.addSource('worldpop', {
   'type': 'raster',
   'tiles': [
-    'https://tiles.arcgis.com/tiles/DO4gTjwJVIJ7O9Ca/arcgis/rest/services/GHS_POP_2015/MapServer/tile/{z}/{y}/{x}'
+    'https://data.humdata.org/hxlproxy/api/tilejson/1.0/population/{z}/{x}/{y}.png'
   ],
   'tileSize': 256
 });
@@ -323,8 +323,8 @@ map.addLayer({
   'id': 'worldpop',
   'type': 'raster',
   'source': 'worldpop',
-  'layout': {'visibility': 'visible'},
-  'paint': {'raster-opacity': 0.5}
+  'layout': { 'visibility': 'visible' },
+  'paint': { 'raster-opacity': 0.5 }
 });
 
 });

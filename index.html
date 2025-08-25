@@ -146,61 +146,62 @@ function mapLocalUnitToFeature(r) {
   }
   if (lon == null || lat == null) return null;
 
-  const country = r.country_details?.name || null;
-  const iso3 = r.country_details?.iso3 || null;
-  const typeName = r.health?.health_facility_type_details?.name || r.type_details?.name || null;
   const funcName = (r.health?.functionality_details?.name || '').toLowerCase();
   let status = 'unknown';
   if (funcName.includes('fully')) status = 'functional';
   else if (funcName.includes('partial')) status = 'partial';
   else if (funcName.includes('non') || funcName.includes('not')) status = 'nonfunctional';
 
-  const namesFrom = (arr) => Array.isArray(arr) ? arr.map(x => (x?.name || '').toLowerCase()) : [];
-  const svcNames = new Set([
-    ...namesFrom(r.health?.general_medical_services_details),
-    ...namesFrom(r.health?.specialized_medical_beyond_primary_level_details),
-    ...namesFrom(r.health?.blood_services_details),
-    ...namesFrom(r.health?.professional_training_facilities_details)
-  ]);
-  const has = (kw) => [...svcNames].some(n => n.includes(kw));
-
   const p = {
     id: r.id,
-    name: r.english_branch_name || r.local_branch_name || 'Local Unit',
-    country,
-    iso3,
-    type: (typeName || '').toLowerCase().replace(/\s+/g, '_') || null,
-    type_name: typeName,
-    status,
-    functionality_label: r.health?.functionality_details?.name || null,
+    national_society: r.country_details?.name || null,
+    country: r.country_details?.name || null,
+    facility_name: r.english_branch_name || r.local_branch_name || 'Local Unit',
+    location_of_facility: r.address_en || r.address_loc || null,
     lat, lon,
-    address: r.address_en || r.address_loc || r.location || null,
-    contact: r.email || r.phone || r.focal_person_en || r.focal_person_loc || null,
-    beds_total: typeof r.health?.maximum_capacity === 'number' ? r.health.maximum_capacity : null,
-    inpatient_capable: !!r.health?.is_in_patient_capacity,
+    district: null, // Use appropriate API field if available
+    health_facility_type: r.health?.health_facility_type_details?.name || r.type_details?.name || null,
+    affiliation: r.affiliation_details?.name || null,
+    functionality: status,
+    primary_health_care_info: r.health?.primary_health_care_center_details?.name || null,
+    inpatient_care: !!r.health?.is_in_patient_capacity,
     warehousing: !!r.health?.is_warehousing,
     cold_chain: !!r.health?.is_cold_chain,
-    isolation_rooms: r.health?.number_of_isolation_rooms ?? null,
-    hr_total: r.health?.total_number_of_human_resource ?? null,
+    general_medical_services: r.health?.general_medical_services_details?.map(s => s.name).join(', ') || null,
+    specialized_services: r.health?.specialized_medical_beyond_primary_level_details?.map(s => s.name).join(', ') || null,
+    blood_services: r.health?.blood_services_details?.map(s => s.name).join(', ') || null,
+    total_hr: r.health?.total_number_of_human_resource || null,
+    general_practitioners: r.health?.general_practitioner || null,
+    specialists: r.health?.specialist || null,
+    residents_doctors: r.health?.residents_doctor || null,
+    nurses: r.health?.nurse || null,
+    dentists: r.health?.dentist || null,
+    nursing_aids: r.health?.nursing_aid || null,
+    midwives: r.health?.midwife || null,
+    other_medical_health_workers: r.other_medical_health_workers || null,
     hospital_type: r.health?.hospital_type_details?.name || null,
     teaching_hospital: !!r.health?.is_teaching_hospital,
-    svc_emergency: has('emergency') || has('pre_hospital'),
-    svc_maternity: has('maternity') || has('gynaecology') || has('obstetric'),
-    svc_surgery: has('surgical') || has('surgery') || has('anaesthes'),
-    svc_ncd: has('non-communicable') || has('ncd') || has('chronic'),
-    svc_mhpss: has('mental') || has('psych') || has('mhpss'),
-    svc_lab: has('laboratory') || has('lab'),
-    svc_radiology: has('radiology') || has('x-ray') || has('imaging'),
-    svc_vaccination: has('vaccin'),
-    svc_pharmacy: has('pharmacy'),
-    svc_isolation_id: !!r.health?.is_isolation_rooms_wards || has('isolation'),
+    maximum_capacity: r.health?.maximum_capacity || null,
+    isolation_rooms: r.health?.number_of_isolation_rooms || null,
+    number_of_isolation_rooms: r.health?.number_of_isolation_rooms || null,
+    speciality: r.speciality || null,
+    other_services: r.other_services || null,
+    feedback: r.feedback || null,
+    other_facility_type: r.other_facility_type || null,
+    ambulance_type_a: r.ambulance_type_a || null,
+    ambulance_type_b: r.ambulance_type_b || null,
+    ambulance_type_c: r.ambulance_type_c || null,
+    other_affiliation: r.other_affiliation || null,
+    professional_training_facilities: r.professional_training_facilities ? 'yes' : 'no',
+    visibility_of_data: r.visibility_display || null,
+    region: r.region || null,
     last_updated: r.modified_at || r.created_at || null,
     confidence: r.validated ? 'validated' : (r.draft ? 'draft' : null),
     _raw: r
   };
 
   return { type: 'Feature', geometry: { type: 'Point', coordinates: [lon, lat] }, properties: p };
-} 
+}
 
 async function loadFacilities() {
   try {

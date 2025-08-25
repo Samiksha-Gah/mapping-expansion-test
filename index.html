@@ -146,55 +146,45 @@ function mapLocalUnitToFeature(r) {
   }
   if (lon == null || lat == null) return null;
 
-  const funcName = (r.health?.functionality_details?.name || '').toLowerCase();
-  let status = 'unknown';
-  if (funcName.includes('fully')) status = 'functional';
-  else if (funcName.includes('partial')) status = 'partial';
-  else if (funcName.includes('non') || funcName.includes('not')) status = 'nonfunctional';
+  const country = r.country_details?.name || null;
+  const typeName = r.health?.health_facility_type_details?.name || r.type_details?.name || null;
 
   const p = {
     id: r.id,
-    national_society: r.country_details?.name || null,
-    country: r.country_details?.name || null,
+    national_society: r.country_details?.name || null, // Adjust if you have a direct field
+    country,
     facility_name: r.english_branch_name || r.local_branch_name || 'Local Unit',
     location_of_facility: r.address_en || r.address_loc || null,
     lat, lon,
-    district: null, // Use appropriate API field if available
-    health_facility_type: r.health?.health_facility_type_details?.name || r.type_details?.name || null,
+    district: r.address_loc || null, // Adjust if there's a specific field for district
+    health_facility_type: typeName,
     affiliation: r.affiliation_details?.name || null,
-    functionality: status,
+    functionality: (r.health?.functionality_details?.name || 'unknown').toLowerCase(),
     primary_health_care_info: r.health?.primary_health_care_center_details?.name || null,
     inpatient_care: !!r.health?.is_in_patient_capacity,
     warehousing: !!r.health?.is_warehousing,
     cold_chain: !!r.health?.is_cold_chain,
-    general_medical_services: r.health?.general_medical_services_details?.map(s => s.name).join(', ') || null,
-    specialized_services: r.health?.specialized_medical_beyond_primary_level_details?.map(s => s.name).join(', ') || null,
-    blood_services: r.health?.blood_services_details?.map(s => s.name).join(', ') || null,
-    total_hr: r.health?.total_number_of_human_resource || null,
-    general_practitioners: r.health?.general_practitioner || null,
-    specialists: r.health?.specialist || null,
-    residents_doctors: r.health?.residents_doctor || null,
-    nurses: r.health?.nurse || null,
-    dentists: r.health?.dentist || null,
-    nursing_aids: r.health?.nursing_aid || null,
-    midwives: r.health?.midwife || null,
-    other_medical_health_workers: r.other_medical_health_workers || null,
+    general_medical_services: r.health?.general_medical_services_details?.map(s => s.name).join(', ') || 'none',
+    specialized_services: r.health?.specialized_medical_beyond_primary_level_details?.map(s => s.name).join(', ') || 'none',
+    blood_services: r.health?.blood_services_details?.map(s => s.name).join(', ') || 'none',
+    total_hr: r.health?.total_number_of_human_resource || 0,
+    general_practitioners: r.health?.general_practitioner || 0,
+    specialists: r.health?.specialist || 0,
+    residents_doctors: r.health?.residents_doctor || 0,
+    nurses: r.health?.nurse || 0,
+    dentists: r.health?.dentist || 0,
+    nursing_aids: r.health?.nursing_aid || 0,
+    midwives: r.health?.midwife || 0,
     hospital_type: r.health?.hospital_type_details?.name || null,
     teaching_hospital: !!r.health?.is_teaching_hospital,
     maximum_capacity: r.health?.maximum_capacity || null,
     isolation_rooms: r.health?.number_of_isolation_rooms || null,
-    number_of_isolation_rooms: r.health?.number_of_isolation_rooms || null,
     speciality: r.speciality || null,
     other_services: r.other_services || null,
     feedback: r.feedback || null,
-    other_facility_type: r.other_facility_type || null,
     ambulance_type_a: r.ambulance_type_a || null,
     ambulance_type_b: r.ambulance_type_b || null,
-    ambulance_type_c: r.ambulance_type_c || null,
-    other_affiliation: r.other_affiliation || null,
-    professional_training_facilities: r.professional_training_facilities ? 'yes' : 'no',
     visibility_of_data: r.visibility_display || null,
-    region: r.region || null,
     last_updated: r.modified_at || r.created_at || null,
     confidence: r.validated ? 'validated' : (r.draft ? 'draft' : null),
     _raw: r
@@ -257,32 +247,31 @@ function addFacilityLayer(){
   });
 }
 
-function renderFacility(f){
-  const p=f.properties;
-  q('summary').innerHTML=`<b>${fmt(p.name)}</b> (${fmt(p.type)}) ${badge(p.status)}`;
-  q('list').innerHTML='';
-  q('details').innerHTML=`
+function renderFacility(f) {
+  const p = f.properties;
+  q('summary').innerHTML = `<b>${fmt(p.facility_name)}</b> (${fmt(p.health_facility_type)}) ${badge(p.functionality)}`;
+  q('list').innerHTML = '';
+  q('details').innerHTML = `
     <div class="section"><h3>Core</h3>
-      <div class="kv"><b>Type</b> ${fmt(p.type)}</div>
-      <div class="kv"><b>Status</b> ${badge(p.status)}</div>
+      <div class="kv"><b>Type</b> ${fmt(p.health_facility_type)}</div>
+      <div class="kv"><b>Status</b> ${badge(p.functionality)}</div>
       <div class="kv"><b>Country</b> ${fmt(p.country)}</div>
-      <div class="kv"><b>Owner</b> ${fmt(p.owner)}</div>
       <div class="kv"><b>Last updated</b> ${fmt(p.last_updated)}</div>
       <div class="kv"><b>Coords</b> ${p.lat}, ${p.lon}</div>
     </div>
     <div class="section"><h3>Capacity & Activity</h3>
-      <div class="kv"><b>Beds total/avail</b> ${fmt(p.beds_total)} / ${fmt(p.beds_available)}</div>
-      <div class="kv"><b>OPD daily avg</b> ${fmt(p.opd_daily_avg)}</div>
-      <div class="kv"><b>Inpatient capable</b> ${t(p.inpatient_capable)?'yes':'no'}</div>
+      <div class="kv"><b>Beds total</b> ${fmt(p.maximum_capacity)}</div>
+      <div class="kv"><b>Inpatient capable</b> ${t(p.inpatient_care) ? 'yes' : 'no'}</div>
     </div>
     <div class="section"><h3>Services</h3>
-      ${['svc_emergency','svc_maternity','svc_surgery','svc_ncd','svc_mhpss','svc_lab','svc_radiology','svc_vaccination','svc_pharmacy','svc_isolation_id']
-        .filter(k=>k in p)
-        .map(k=>`<span class="pill" style="background:${t(p[k])?'#e6f4ea':'#f3f4f6'};color:${t(p[k])?'#166534':'#374151'}">${k.replace('svc_','')}: ${t(p[k])?'yes':'no'}</span>`).join(' ')
-      ||'<span class="muted">no data</span>'}
+      ${['general_medical_services', 'specialized_services', 'blood_services']
+        .map(k => `<div class="kv"><b>${k.replace('_', ' ')}</b>: ${fmt(p[k])}</div>`).join(' ')}
+    </div>
+    <div class="section"><h3>Staff</h3>
+      ${['total_hr', 'general_practitioners', 'specialists', 'residents_doctors', 'nurses', 'dentists', 'nursing_aids', 'midwives']
+        .map(k => `<div class="kv"><b>${k.replace('_', ' ')}</b>: ${fmt(p[k])}</div>`).join(' ')}
     </div>
     <div class="section"><h3>Needs & Contact</h3>
-      <div class="kv"><b>Needs</b> ${fmt(p.needs_priority)}</div>
       <div class="kv"><b>Contact</b> ${fmt(p.contact)}</div>
       <div class="kv"><b>Confidence</b> ${fmt(p.confidence)}</div>
     </div>`;

@@ -101,7 +101,6 @@
 mapboxgl.accessToken='pk.eyJ1Ijoic2FtaWtzaGFnYWhlcndhciIsImEiOiJjbWVnOHVjamcxNHFwMm5xNHJscHdxYjdqIn0.x2xdpJyWndbT007njbAKEA';         // ← replace once
 const GO_BASE = 'https://goadmin.ifrc.org/api/v2';
 const GO_TOKEN = 'a0aefae0c20a1372e1cf058b7b3df53c87cffabc'; // Replace with your actual token
-const FAC_CSV='facilities_dataset.csv';
 const USGS='https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_day.geojson';
 const GDACS='https://corsproxy.io/?https://www.gdacs.org/gdacsapi/api/events/geteventlist/';  // proxy
 
@@ -201,12 +200,6 @@ function mapLocalUnitToFeature(r) {
   };
 
   return { type: 'Feature', geometry: { type: 'Point', coordinates: [lon, lat] }, properties: p };
-}
-function csvToGeo(json){
-  return {type:'FeatureCollection',features:json.map(r=>{
-      const f={type:'Feature',geometry:{type:'Point',coordinates:[n(r.lon),n(r.lat)]},properties:r};
-      return f;
-  })};
 }
 
 async function loadFacilities() {

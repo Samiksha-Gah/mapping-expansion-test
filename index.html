@@ -9,8 +9,6 @@
   <link   href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet"/>
   <!-- Turf for spatial math -->
   <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
-  <!-- PapaParse for CSV → JSON -->
-  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
 
   <style>
     html, body {
@@ -101,6 +99,8 @@
 
 <script>
 mapboxgl.accessToken='pk.eyJ1Ijoic2FtaWtzaGFnYWhlcndhciIsImEiOiJjbWVnOHVjamcxNHFwMm5xNHJscHdxYjdqIn0.x2xdpJyWndbT007njbAKEA';         // ← replace once
+const GO_BASE = 'https://goadmin.ifrc.org/api/v2';
+const GO_TOKEN = 'a0aefae0c20a1372e1cf058b7b3df53c87cffabc'; // Replace with your actual token
 const FAC_CSV='facilities_dataset.csv';
 const USGS='https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_day.geojson';
 const GDACS='https://corsproxy.io/?https://www.gdacs.org/gdacsapi/api/events/geteventlist/';  // proxy
@@ -118,6 +118,90 @@ const badge=(s)=>`<span class="badge status-${s||'unknown'}">${s||'unknown'}</sp
 const magToKm=(m)=>Math.max(10,Math.min(Math.round(Math.pow(10,0.5*m-1.2)),250));
 const distKm=(a,b)=>turf.distance(a,b,{units:'kilometers'});
 
+async function fetchAllIFRC(url) {
+  const headers = { Authorization: `Token ${GO_TOKEN}`, Accept: 'application/json' };
+  let out = [], next = url;
+  while (next) {
+    const r = await fetch(next, { headers });
+    if (!r.ok) throw new Error(`IFRC API ${r.status}: ${next}`);
+    const j = await r.json();
+    out = out.concat(j.results || (Array.isArray(j) ? j : []));
+    next = j.next || null;
+  }
+  return out;
+}
+
+function mapLocalUnitToFeature(r) {
+  let lon = null, lat = null;
+  const lg = r.location_geojson;
+  if (lg && typeof lg === 'object') {
+    if (lg.type === 'Feature' && lg.geometry?.type === 'Point' && Array.isArray(lg.geometry.coordinates)) {
+      [lon, lat] = lg.geometry.coordinates;
+    } else if (lg.type === 'Point' && Array.isArray(lg.coordinates)) {
+      [lon, lat] = lg.coordinates;
+    }
+  }
+  if ((lon == null || lat == null) && r.location_json && typeof r.location_json.lng === 'number' && typeof r.location_json.lat === 'number') {
+    lon = r.location_json.lng;
+    lat = r.location_json.lat;
+  }
+  if (lon == null || lat == null) return null;
+
+  const country = r.country_details?.name || null;
+  const iso3 = r.country_details?.iso3 || null;
+  const typeName = r.health?.health_facility_type_details?.name || r.type_details?.name || null;
+  const funcName = (r.health?.functionality_details?.name || '').toLowerCase();
+  let status = 'unknown';
+  if (funcName.includes('fully')) status = 'functional';
+  else if (funcName.includes('partial')) status = 'partial';
+  else if (funcName.includes('non') || funcName.includes('not')) status = 'nonfunctional';
+
+  const namesFrom = (arr) => Array.isArray(arr) ? arr.map(x => (x?.name || '').toLowerCase()) : [];
+  const svcNames = new Set([
+    ...namesFrom(r.health?.general_medical_services_details),
+    ...namesFrom(r.health?.specialized_medical_beyond_primary_level_details),
+    ...namesFrom(r.health?.blood_services_details),
+    ...namesFrom(r.health?.professional_training_facilities_details)
+  ]);
+  const has = (kw) => [...svcNames].some(n => n.includes(kw));
+
+  const p = {
+    id: r.id,
+    name: r.english_branch_name || r.local_branch_name || 'Local Unit',
+    country,
+    iso3,
+    type: (typeName || '').toLowerCase().replace(/\s+/g, '_') || null,
+    type_name: typeName,
+    status,
+    functionality_label: r.health?.functionality_details?.name || null,
+    lat, lon,
+    address: r.address_en || r.address_loc || r.location || null,
+    contact: r.email || r.phone || r.focal_person_en || r.focal_person_loc || null,
+    beds_total: typeof r.health?.maximum_capacity === 'number' ? r.health.maximum_capacity : null,
+    inpatient_capable: !!r.health?.is_in_patient_capacity,
+    warehousing: !!r.health?.is_warehousing,
+    cold_chain: !!r.health?.is_cold_chain,
+    isolation_rooms: r.health?.number_of_isolation_rooms ?? null,
+    hr_total: r.health?.total_number_of_human_resource ?? null,
+    hospital_type: r.health?.hospital_type_details?.name || null,
+    teaching_hospital: !!r.health?.is_teaching_hospital,
+    svc_emergency: has('emergency') || has('pre_hospital'),
+    svc_maternity: has('maternity') || has('gynaecology') || has('obstetric'),
+    svc_surgery: has('surgical') || has('surgery') || has('anaesthes'),
+    svc_ncd: has('non-communicable') || has('ncd') || has('chronic'),
+    svc_mhpss: has('mental') || has('psych') || has('mhpss'),
+    svc_lab: has('laboratory') || has('lab'),
+    svc_radiology: has('radiology') || has('x-ray') || has('imaging'),
+    svc_vaccination: has('vaccin'),
+    svc_pharmacy: has('pharmacy'),
+    svc_isolation_id: !!r.health?.is_isolation_rooms_wards || has('isolation'),
+    last_updated: r.modified_at || r.created_at || null,
+    confidence: r.validated ? 'validated' : (r.draft ? 'draft' : null),
+    _raw: r
+  };
+
+  return { type: 'Feature', geometry: { type: 'Point', coordinates: [lon, lat] }, properties: p };
+}
 function csvToGeo(json){
   return {type:'FeatureCollection',features:json.map(r=>{
       const f={type:'Feature',geometry:{type:'Point',coordinates:[n(r.lon),n(r.lat)]},properties:r};
@@ -125,14 +209,30 @@ function csvToGeo(json){
   })};
 }
 
-function loadFacilities(){
-  Papa.parse(FAC_CSV,{download:true,header:true,dynamicTyping:true,
-    complete:res=>{
-      facAll=csvToGeo(res.data.filter(r=>r.id));
-      populateCountryFilter();
-      applyFilters();
-      addFacilityLayer();
-    }});
+async function loadFacilities() {
+  try {
+    const params = new URLSearchParams({ validated: 'true', draft: 'false', limit: '500' });
+    const url = `${GO_BASE}/local-units/?${params.toString()}`;
+    const rows = await fetchAllIFRC(url);
+    const feats = rows.map(mapLocalUnitToFeature).filter(Boolean);
+    facAll = { type: 'FeatureCollection', features: feats };
+
+    populateCountryFilter();  // Populate filter with new data
+    populateTypeFilter();     // Populate type filter dynamically
+    applyFilters();           // Apply user-defined filters
+    addFacilityLayer();       // Add layer to map
+  } catch (e) {
+    console.error(e);
+    q('summary').textContent = 'Failed to load IFRC GO Local Units';
+  }
+}
+
+function populateTypeFilter() {
+  const sel = q('typeFilter');
+  if (!sel) return;
+  const set = new Set(facAll.features.map(f => f.properties.type_name).filter(Boolean));
+  const opts = ['All types', ...[...set].sort().map(t => `<option>${t}</option>`)];
+  sel.innerHTML = opts.join('');
 }
 
 function populateCountryFilter(){
@@ -141,13 +241,15 @@ function populateCountryFilter(){
     [...set].sort().map(c=>`<option>${c}</option>`).join('');
 }
 
-function applyFilters(){
-  const c=q('countryFilter').value,t=q('typeFilter').value,s=q('statusFilter').value, bmin=n(q('bedsMin').value)||0;
-  facFiltered.features=facAll.features.filter(f=>{
-    const p=f.properties;
-    return (!c||p.country===c)&&(!t||p.type===t)&&(!s||p.status===s)&&(!bmin||p.beds_total>=bmin);
+function applyFilters() {
+  const c = q('countryFilter').value, t = q('typeFilter').value, s = q('statusFilter').value, bmin = n(q('bedsMin').value) || 0;
+  facFiltered.features = facAll.features.filter(f => {
+    const p = f.properties;
+    const typeMatch = !t || p.type_name === t || p.type === t;
+    return (!c || p.country === c) && typeMatch && (!s || p.status === s) && (!bmin || (p.beds_total || 0) >= bmin);
   });
-  if(map.getSource('fac'))map.getSource('fac').setData(facFiltered);
+
+  if (map.getSource('fac')) map.getSource('fac').setData(facFiltered);
 }
 
 function addFacilityLayer(){

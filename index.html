@@ -202,13 +202,16 @@ async function loadFacilities() {
 }
 
 function populateTypeFilter() {
-  const sel = q('typeFilter');
-  if (!sel) return;
-  const set = new Set(facAll.features.map(f => f.properties.type_name).filter(Boolean));
-  const opts = ['All types', ...[...set].sort().map(t => `<option>${t}</option>`)];
-  sel.innerHTML = opts.join('');
+  fetch(`${GO_BASE}/local-units-options/`, { headers: { Authorization: `Token ${GO_TOKEN}` } })
+    .then(res => res.json())
+    .then(data => {
+      const sel = document.getElementById('typeFilter');
+      if (!sel) return;
+      const types = data.type.map(t => t.name).filter(Boolean);
+      sel.innerHTML = types.length ? ['<option value="">All types</option>', ...types.map(t => `<option>${t}</option>`)].join('') : '<option value="">No types available</option>';
+    })
+    .catch(err => console.error("Error fetching types:", err));
 }
-
 function populateCountryFilter(){
   const set=new Set(facAll.features.map(f=>f.properties.country).filter(Boolean));
   q('countryFilter').innerHTML='<option value="">All countries</option>'+

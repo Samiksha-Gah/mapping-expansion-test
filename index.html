@@ -11,17 +11,8 @@
   <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
 
   <style>
-    html, body {
-    margin: 0;
-    height: 100%;
-    }
-
-    #map {
-    position: absolute;   /* <-- add this */
-    top: 0;
-    bottom: 0;
-    width: 100%;
-    }
+    html, body { margin: 0; height: 100%; }
+    #map { position: absolute; top: 0; bottom: 0; width: 100%; }
     #panel{position:absolute;top:10px;left:10px;z-index:2;
       background:rgba(255,255,255,.97);padding:12px;width:380px;
       font-family:system-ui,Arial,sans-serif;font-size:13px;border-radius:6px;
@@ -50,7 +41,7 @@
     .section{margin-top:10px}
     .section h3{font-size:13px;margin:8px 0 4px;border-bottom:1px solid #eee;padding-bottom:3px}
     .small{font-size:12px}
-    .pill{display:inline-block;background:#eef;border-radius:9999px;padding:2px 8px;margin:2px;font-size:11px}
+    .pill{display:inline-block;border-radius:9999px;padding:2px 8px;margin:2px;font-size:11px}
     .btn{background:#2563eb;color:#fff;border:none;border-radius:4px;padding:6px 8px;cursor:pointer}
   </style>
 </head>
@@ -69,12 +60,12 @@
     <label>Filters</label>
     <select id="countryFilter"><option value="">All countries</option></select>
     <div style="height:6px"></div>
-    <select id="typeFilter">
-      <option value="">All types</option><option>clinic</option><option>field_hospital</option><option>mobile_clinic</option><option>polyclinic</option>
-    </select>
+    <!-- Keep only "All types"; JS fills the rest dynamically -->
+    <select id="typeFilter"><option value="">All types</option></select>
     <div style="height:6px"></div>
     <select id="statusFilter">
-      <option value="">All status</option><option>functional</option><option>partial</option><option>nonfunctional</option><option>unknown</option>
+      <option value="">All status</option>
+      <option>functional</option><option>partial</option><option>nonfunctional</option><option>unknown</option>
     </select>
     <div style="height:6px"></div>
     <input id="bedsMin" type="number" min="0" placeholder="Min total beds (optional)">
@@ -98,11 +89,13 @@
 </div>
 
 <script>
-mapboxgl.accessToken='pk.eyJ1Ijoic2FtaWtzaGFnYWhlcndhciIsImEiOiJjbWVnOHVjamcxNHFwMm5xNHJscHdxYjdqIn0.x2xdpJyWndbT007njbAKEA';         // ← replace once
+mapboxgl.accessToken='pk.eyJ1Ijoic2FtaWtzaGFnYWhlcndhciIsImEiOiJjbWVnOHVjamcxNHFwMm5xNHJscHdxYjdqIn0.x2xdpJyWndbT007njbAKEA';
+
 const GO_BASE = 'https://goadmin.ifrc.org/api/v2';
-const GO_TOKEN = 'a0aefae0c20a1372e1cf058b7b3df53c87cffabc'; // Replace with your actual token
+const GO_TOKEN = 'YOUR_API_TOKEN'; // <-- replace
+
 const USGS='https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_day.geojson';
-const GDACS='https://corsproxy.io/?https://www.gdacs.org/gdacsapi/api/events/geteventlist/';  // proxy
+const GDACS='https://corsproxy.io/?https://www.gdacs.org/gdacsapi/api/events/geteventlist/';  // simple proxy
 
 let facAll={type:'FeatureCollection',features:[]}, facFiltered={type:'FeatureCollection',features:[]};
 let usgsFC=null, gdacsFC=null, hazFeature=null, hazBuffer=null;
@@ -112,11 +105,12 @@ const map=new mapboxgl.Map({container:'map',style:'mapbox://styles/mapbox/light-
 const q=(id)=>document.getElementById(id);
 const fmt=(v)=>v||v===0?v:'—';
 const n=(v)=>Number(v);
-const t=(v)=>String(v).toLowerCase()==='true';
+const t=(v)=>v===true || String(v).toLowerCase()==='true';
 const badge=(s)=>`<span class="badge status-${s||'unknown'}">${s||'unknown'}</span>`;
 const magToKm=(m)=>Math.max(10,Math.min(Math.round(Math.pow(10,0.5*m-1.2)),250));
 const distKm=(a,b)=>turf.distance(a,b,{units:'kilometers'});
 
+/* ---------------- IFRC helpers ---------------- */
 async function fetchAllIFRC(url) {
   const headers = { Authorization: `Token ${GO_TOKEN}`, Accept: 'application/json' };
   let out = [], next = url;
@@ -130,47 +124,152 @@ async function fetchAllIFRC(url) {
   return out;
 }
 
+// Map a list item → minimal feature; health details are added on click.
 function mapLocalUnitToFeature(r) {
   let lon = null, lat = null;
   const lg = r.location_geojson;
-
   if (lg?.type === 'Point' && Array.isArray(lg.coordinates)) {
     [lon, lat] = lg.coordinates;
   }
-
   if (lon == null || lat == null) return null;
 
+  const unitTypeName = r.type_details?.name || null; // Administrative, Health Care, etc.
+  const healthTypeName = r.health_details?.health_facility_type_details?.name || null; // Blood Center, Hospital ...
+
   const p = {
+    lat: lat,
+    lon: lon
     id: r.id,
+    name: r.english_branch_name || r.local_branch_name || 'Local Unit',
+    facility_name: r.english_branch_name || r.local_branch_name || 'Local Unit',
     country: r.country_details?.name || null,
-    facility_name: r.local_branch_name || r.english_branch_name || 'Local Unit',
-    address: r.address_loc || r.address_en || null,
-    lat, lon,
-    health_facility_type: r.type_details?.name || null,
-    functionality: (r.health_details?.functionality_details?.name || 'unknown').toLowerCase(),
-    email: r.email || null,
-    phone: r.phone || null,
+    iso3: r.country_details?.iso3 || null,
+
+    type_name: unitTypeName,
+    type: (unitTypeName || '').toLowerCase().replace(/\s+/g,'_'),
+    health_facility_type: healthTypeName || null,
+
+    address: r.address_en || r.address_loc || null,
     contact: r.email || r.phone || r.focal_person_en || r.focal_person_loc || null,
     last_updated: r.modified_at || null,
-    confidence: r.validated ? 'validated' : 'draft',
+    confidence: r.validated ? 'validated' : (r.draft ? 'draft' : null),
+
+    status: 'unknown',
+    beds_total: null,
+    inpatient_capable: false,
+    warehousing: false,
+    cold_chain: false,
+
+    // HR placeholders
+    hr_total: null,
+    hr_gp: null,
+    hr_specialist: null,
+    hr_residents: null,
+    hr_nurse: null,
+    hr_dentist: null,
+    hr_nursing_aid: null,
+    hr_midwife: null,
+
+    // Service flags
+    svc_emergency: false,
+    svc_maternity: false,
+    svc_surgery: false,
+    svc_ncd: false,
+    svc_mhpss: false,
+    svc_lab: false,
+    svc_radiology: false,
+    svc_vaccination: false,
+    svc_pharmacy: false,
+    svc_isolation_id: false,
+
+    _enriched: false
   };
 
   return { type: 'Feature', geometry: { type: 'Point', coordinates: [lon, lat] }, properties: p };
 }
 
+async function fetchIFRCDetail(id) {
+  const url = `${GO_BASE}/local-units/${id}/`;
+  const headers = { Authorization: `Token ${GO_TOKEN}`, Accept: 'application/json' };
+  const r = await fetch(url, { headers });
+  if (!r.ok) throw new Error(`IFRC detail ${r.status}: ${url}`);
+  return r.json();
+}
+
+function enrichFeatureFromDetail(f, d) {
+  const p = f.properties;
+
+  // functionality -> status
+  const funcName = (d.health?.functionality_details?.name || '').toLowerCase();
+  let status = 'unknown';
+  if (funcName.includes('fully')) status = 'functional';
+  else if (funcName.includes('partial')) status = 'partial';
+  else if (funcName.includes('not') || funcName.includes('non')) status = 'nonfunctional';
+
+  const namesFrom = (arr) => Array.isArray(arr) ? arr.map(x => (x?.name || '').toLowerCase()) : [];
+  const svcNames = new Set([
+    ...namesFrom(d.health?.general_medical_services_details),
+    ...namesFrom(d.health?.specialized_medical_beyond_primary_level_details),
+    ...namesFrom(d.health?.blood_services_details),
+    ...namesFrom(d.health?.professional_training_facilities_details)
+  ]);
+  const has = (kw) => [...svcNames].some(n => n.includes(kw));
+
+  // Update labels if present
+  p.facility_name = d.english_branch_name || d.local_branch_name || p.facility_name;
+  p.health_facility_type = d.health?.health_facility_type_details?.name || p.health_facility_type;
+  p.type_name = d.type_details?.name || p.type_name;
+
+  // Capacity/logistics/HR
+  p.status = status;
+  p.beds_total = typeof d.health?.maximum_capacity === 'number' ? d.health.maximum_capacity : null;
+  p.inpatient_capable = !!d.health?.is_in_patient_capacity;
+  p.warehousing = !!d.health?.is_warehousing;
+  p.cold_chain = !!d.health?.is_cold_chain;
+  p.isolation_rooms = d.health?.number_of_isolation_rooms ?? null;
+  p.hospital_type = d.health?.hospital_type_details?.name || null;
+  p.teaching_hospital = !!d.health?.is_teaching_hospital;
+
+  p.hr_total = d.health?.total_number_of_human_resource ?? null;
+  p.hr_gp = d.health?.general_practitioner ?? null;
+  p.hr_specialist = d.health?.specialist ?? null;
+  p.hr_residents = d.health?.residents_doctor ?? null;
+  p.hr_nurse = d.health?.nurse ?? null;
+  p.hr_dentist = d.health?.dentist ?? null;
+  p.hr_nursing_aid = d.health?.nursing_aid ?? null;
+  p.hr_midwife = d.health?.midwife ?? null;
+
+  // Service flags for pills
+  p.svc_emergency = has('emergency') || has('pre hospital');
+  p.svc_maternity = has('maternity') || has('gynaecology') || has('obstetric') || has('srh');
+  p.svc_surgery = has('surgical') || has('surgery') || has('anaesthes');
+  p.svc_ncd = has('non-communicable') || has('ncd') || has('chronic');
+  p.svc_mhpss = has('mental');
+  p.svc_lab = has('laboratory') || has('lab');
+  p.svc_radiology = has('radiology') || has('imaging') || has('x-ray');
+  p.svc_vaccination = has('vaccin');
+  p.svc_pharmacy = has('pharmacy');
+  p.svc_isolation_id = !!d.health?.is_isolation_rooms_wards || has('isolation');
+
+  // Contact/meta
+  p.contact = d.email || d.phone || d.focal_person_en || d.focal_person_loc || p.contact;
+  p.last_updated = d.modified_at || d.created_at || p.last_updated;
+
+  p._enriched = true;
+}
+
+/* ---------------- Load facilities ---------------- */
 async function loadFacilities() {
   try {
-    const url = `${GO_BASE}/local-units/?validated=true&draft=false&limit=500`;
+    // You can add type__code:'2' to fetch Health Care only
+    const params = new URLSearchParams({ validated: 'true', draft: 'false', limit: '500' });
+    const url = `${GO_BASE}/local-units/?${params.toString()}`;
     const rows = await fetchAllIFRC(url);
-
-    console.log("API Response for Facilities:", rows); // Log the API response
-
     const feats = rows.map(mapLocalUnitToFeature).filter(Boolean);
-    console.log("Mapped Features:", feats); // Log the mapped features
-
     facAll = { type: 'FeatureCollection', features: feats };
+
     populateCountryFilter();
-    populateTypeFilter();
+    populateTypeFilterFromData();
     applyFilters();
     addFacilityLayer();
   } catch (e) {
@@ -179,87 +278,132 @@ async function loadFacilities() {
   }
 }
 
-function populateTypeFilter() {
-  fetch(`${GO_BASE}/local-units-options/`, { headers: { Authorization: `Token ${GO_TOKEN}` } })
-    .then(res => res.json())
-    .then(data => {
-      const sel = document.getElementById('typeFilter');
-      if (!sel) return;
-      const types = data.type.map(t => t.name).filter(Boolean);
-      sel.innerHTML = ['<option value="">All types</option>', ...types.map(t => `<option>${t}</option>`)].join('');
-    })
-    .catch(err => console.error("Error fetching types:", err));
-}
 function populateCountryFilter(){
   const set=new Set(facAll.features.map(f=>f.properties.country).filter(Boolean));
   q('countryFilter').innerHTML='<option value="">All countries</option>'+
     [...set].sort().map(c=>`<option>${c}</option>`).join('');
 }
 
-function applyFilters() {
-  const c = q('countryFilter').value, t = q('typeFilter').value, s = q('statusFilter').value, bmin = n(q('bedsMin').value) || 0;
-  facFiltered.features = facAll.features.filter(f => {
+function populateTypeFilterFromData(){
+  const sel = q('typeFilter'); if (!sel) return;
+  const set = new Set(facAll.features.map(f => f.properties.type_name).filter(Boolean));
+  sel.innerHTML = '<option value="">All types</option>' + [...set].sort().map(t => `<option>${t}</option>`).join('');
+}
+
+function applyFilters(){
+  const c = q('countryFilter').value;
+  const tSel = q('typeFilter').value;
+  const s = q('statusFilter').value;
+  const bmin = Number(q('bedsMin').value) || 0;
+
+  facFiltered.features = facAll.features.filter(f=>{
     const p = f.properties;
-    const typeMatch = !t || p.type_name === t || p.type === t;
-    return (!c || p.country === c) && typeMatch && (!s || p.status === s) && (!bmin || (p.beds_total || 0) >= bmin);
+    const typeOk = !tSel || p.type_name === tSel || p.type === tSel.toLowerCase().replace(/\s+/g,'_');
+    const statusOk = !s || p.status === s;
+    const bedsOk = !bmin || (p.beds_total || 0) >= bmin;
+    const countryOk = !c || p.country === c;
+    return typeOk && statusOk && bedsOk && countryOk;
   });
 
   if (map.getSource('fac')) map.getSource('fac').setData(facFiltered);
 }
 
+/* ---------------- Map layers ---------------- */
 function addFacilityLayer(){
-  if(map.getSource('fac')){map.getSource('fac').setData(facFiltered);return;}
+  if(map.getSource('fac')){ map.getSource('fac').setData(facFiltered); return; }
   map.addSource('fac',{type:'geojson',data:facFiltered});
   map.addLayer({id:'fac',
     type:'circle',source:'fac',
     paint:{'circle-radius':6,'circle-color':'#3b82f6','circle-stroke-width':1,'circle-stroke-color':'#fff'}});
-  map.on('click','fac',e=>{
-    const f=e.features[0];hazFeature=null;hazBuffer=null;renderFacility(f);highlightNone();
+  map.on('click','fac', async (e)=>{
+    const f = e.features[0];
+    const id = f.properties.id;
+    hazFeature=null; hazBuffer=null; highlightNone();
+
+        if (!f.properties._enriched) {
+      q('summary').innerHTML = `<b>${fmt(f.properties.facility_name || f.properties.name)}</b> – loading details...`;
+      try {
+        const d = await fetchIFRCDetail(id);
+        enrichFeatureFromDetail(f, d);
+
+        // update in our collections so we don’t refetch next time
+        const upd = (fc)=>{
+          const i = fc.features.findIndex(x=>x.properties.id===id);
+          if (i>-1) fc.features[i].properties = f.properties;
+        };
+        upd(facAll); upd(facFiltered);
+
+        if (map.getSource('fac')) map.getSource('fac').setData(facFiltered);
+      } catch(err) {
+        console.error(err);
+      }
+    }
+    renderFacility(f);
   });
 }
 
-function renderFacility(f) {
-  const p = f.properties;
-  q('summary').innerHTML = `<b>${fmt(p.facility_name)}</b> (${fmt(p.health_facility_type)}) ${badge(p.functionality)}`;
-  q('list').innerHTML = '';
-  q('details').innerHTML = `
+/* ---------------- Detail panel ---------------- */
+function renderFacility(f){
+  const p=f.properties;
+  q('summary').innerHTML=`<b>${fmt(p.facility_name || p.name)}</b> (${fmt(p.health_facility_type || p.type_name)}) ${badge(p.status)}`;
+  q('list').innerHTML='';
+
+  // pills for services
+  const pill = (label, on) => `<span class="pill" style="background:${on?'#e6f4ea':'#f3f4f6'};color:${on?'#166534':'#374151'}">${label}: ${on?'yes':'no'}</span>`;
+
+  q('details').innerHTML=`
     <div class="section"><h3>Core</h3>
-      <div class="kv"><b>Type</b> ${fmt(p.health_facility_type)}</div>
-      <div class="kv"><b>Status</b> ${badge(p.functionality)}</div>
+      <div class="kv"><b>Type</b> ${fmt(p.health_facility_type || p.type_name)}</div>
+      <div class="kv"><b>Status</b> ${badge(p.status)}</div>
       <div class="kv"><b>Country</b> ${fmt(p.country)}</div>
       <div class="kv"><b>Last updated</b> ${fmt(p.last_updated)}</div>
-      <div class="kv"><b>Coords</b> ${p.lat}, ${p.lon}</div>
+      <div class="kv"><b>Coords</b> ${fmt(p.lat)}, ${fmt(p.lon)}</div>
     </div>
+
     <div class="section"><h3>Capacity & Activity</h3>
-      <div class="kv"><b>Beds total</b> ${fmt(p.maximum_capacity)}</div>
-      <div class="kv"><b>Inpatient capable</b> ${t(p.inpatient_care) ? 'yes' : 'no'}</div>
+      <div class="kv"><b>Beds total</b> ${fmt(p.beds_total)}</div>
+      <div class="kv"><b>Inpatient capable</b> ${t(p.inpatient_capable)?'yes':'no'}</div>
+      <div class="kv"><b>Warehousing</b> ${t(p.warehousing)?'yes':'no'}</div>
+      <div class="kv"><b>Cold chain</b> ${t(p.cold_chain)?'yes':'no'}</div>
+      <div class="kv"><b>Isolation rooms</b> ${fmt(p.isolation_rooms)}</div>
+      <div class="kv"><b>Hospital type</b> ${fmt(p.hospital_type)}</div>
+      <div class="kv"><b>Teaching hospital</b> ${t(p.teaching_hospital)?'yes':'no'}</div>
     </div>
+
     <div class="section"><h3>Services</h3>
-      ${['general_medical_services', 'specialized_services', 'blood_services']
-        .map(k => `<span class="pill" style="background:${fmt(p[k]) !== 'none' ? '#e6f4ea' : '#f3f4f6'};color:${fmt(p[k]) !== 'none' ? '#166534' : '#374151'}">${k.replace('_services', '')}: ${fmt(p[k]) !== 'none' ? 'yes' : 'no'}</span>`).join(' ')}
+      ${[
+        pill('emergency', p.svc_emergency),
+        pill('maternity', p.svc_maternity),
+        pill('surgery', p.svc_surgery),
+        pill('ncd', p.svc_ncd),
+        pill('mhpss', p.svc_mhpss),
+        pill('lab', p.svc_lab),
+        pill('radiology', p.svc_radiology),
+        pill('vaccination', p.svc_vaccination),
+        pill('pharmacy', p.svc_pharmacy),
+        pill('isolation_id', p.svc_isolation_id)
+      ].join(' ')}
     </div>
+
     <div class="section"><h3>Staff</h3>
-      ${['total_hr', 'general_practitioners', 'specialists', 'residents_doctors', 'nurses', 'dentists', 'nursing_aids', 'midwives']
-        .map(k => `<div class="kv"><b>${k.replace('_', ' ')}</b>: ${fmt(p[k])}</div>`).join(' ')}
+      <div class="kv"><b>total hr</b> ${fmt(p.hr_total)}</div>
+      <div class="kv"><b>general practitioners</b> ${fmt(p.hr_gp)}</div>
+      <div class="kv"><b>specialists</b> ${fmt(p.hr_specialist)}</div>
+      <div class="kv"><b>residents doctors</b> ${fmt(p.hr_residents)}</div>
+      <div class="kv"><b>nurses</b> ${fmt(p.hr_nurse)}</div>
+      <div class="kv"><b>dentists</b> ${fmt(p.hr_dentist)}</div>
+      <div class="kv"><b>nursing aids</b> ${fmt(p.hr_nursing_aid)}</div>
+      <div class="kv"><b>midwives</b> ${fmt(p.hr_midwife)}</div>
     </div>
+
     <div class="section"><h3>Needs & Contact</h3>
       <div class="kv"><b>Contact</b> ${fmt(p.contact)}</div>
       <div class="kv"><b>Confidence</b> ${fmt(p.confidence)}</div>
+      <div class="kv"><b>Address</b> ${fmt(p.address)}</div>
     </div>`;
 }
 
-function populateTypeFilter() {
-  fetch(`${GO_BASE}/local-units-options/`)
-    .then(res => res.json())
-    .then(data => {
-      const sel = q('typeFilter');
-      if (!sel) return;
-      const types = data.type.map(t => t.name).filter(Boolean);
-      sel.innerHTML = types.length ? ['<option value="">All types</option>', ...types.map(t => `<option>${t}</option>`)].join('') : '<option value="">No types available</option>';
-    })
-    .catch(err => console.error("Error fetching types:", err));
-}
-
+/* ---------------- Hazards ---------------- */
 function highlightNone(){
   if(map.getSource('hazb'))map.getSource('hazb').setData({type:'FeatureCollection',features:[]});
 }
@@ -280,7 +424,7 @@ function loadUSGS(){
 function selectedEQ(){
   const m=hazFeature.properties.mag, r=magToKm(m);
   hazBuffer=turf.buffer(hazFeature,r,{units:'kilometers'});
-  q('details').innerHTML = '';   // Clear facility detail panel when EQ is clicked
+  q('details').innerHTML = ''; // clear facility panel
   const exposed={type:'FeatureCollection',
     features:facFiltered.features.filter(pt=>turf.booleanPointInPolygon(pt,hazBuffer))};
   if(!map.getSource('hazb')){
@@ -289,7 +433,6 @@ function selectedEQ(){
       paint:{'fill-color':'#e36a6a','fill-opacity':0.1}});
   }else map.getSource('hazb').setData(hazBuffer);
 
-  // summary
   const counts=exposed.features.reduce((o,f)=>{const s=f.properties.status||'unknown';o[s]=(o[s]||0)+1;return o;},{}),
         statusLine=Object.entries(counts).map(([k,v])=>`${k}:${v}`).join('  ');
   q('summary').innerHTML=`<b>EQ M${m}</b> – ${hazFeature.properties.place||''}<br>
@@ -297,22 +440,20 @@ function selectedEQ(){
     <div style="margin-top:6px"><button class="btn" id="clr">Clear</button></div>`;
   q('clr').onclick=()=>{hazFeature=null;highlightNone();q('summary').textContent='Tip: click a facility for details or an earthquake for exposure.';q('list').innerHTML='';q('details').innerHTML='';};
 
-  // list exposed
   q('list').innerHTML = exposed.features.length
       ? exposed.features.map(f=>{
           const p=f.properties;
           const d=distKm(hazFeature,f).toFixed(1);
           return `<div class="item" data-id="${p.id}">
-                    <div><b>${p.name}</b> (${p.type}) ${badge(p.status)}</div>
-                    <div class="small muted">${p.country} • ${d} km from epicenter</div>
+                    <div><b>${fmt(p.facility_name || p.name)}</b> (${fmt(p.health_facility_type || p.type_name)}) ${badge(p.status)}</div>
+                    <div class="small muted">${fmt(p.country)} • ${d} km from epicenter</div>
                   </div>`;
         }).join('')
       : '<div class="item muted">No exposed facilities.</div>';
 
-  // click an exposed item → show its details
   Array.from(document.querySelectorAll('.item[data-id]')).forEach(el=>{
       el.onclick=()=>{
-        const id=el.getAttribute('data-id');
+        const id=Number(el.getAttribute('data-id'));
         const f=facFiltered.features.find(x=>x.properties.id===id);
         if(f)renderFacility(f);
       };
@@ -330,17 +471,17 @@ function loadGDACS(){
   }).catch(()=>console.log('GDACS feed blocked (CORS) – continuing without it'));
 }
 
-/* ------------- UI wiring ------------- */
+/* ---------------- UI wiring ---------------- */
 ['countryFilter','typeFilter','statusFilter','bedsMin'].forEach(id=>q(id).oninput=()=>{applyFilters();highlightNone();});
 terrainToggle.onchange=()=>{ terrainToggle.checked ? enableTerrain() : disableTerrain(); };
-facToggle.onchange   =()=> map.setLayoutProperty('fac','visibility',facToggle.checked?'visible':'none');
-usgsToggle.onchange  =()=> map.setLayoutProperty('usgs','visibility',usgsToggle.checked?'visible':'none');
-gdacsToggle.onchange =()=> map.setLayoutProperty('gdacs','visibility',gdacsToggle.checked?'visible':'none');
-roadsToggle.onchange =()=> map.setLayoutProperty('roads','visibility',roadsToggle.checked?'visible':'none');
-popToggle.onchange   =()=> map.setLayoutProperty('pop','visibility',popToggle.checked?'visible':'none');
-satToggle.onchange = () => {map.setLayoutProperty('satellite', 'visibility', satToggle.checked ? 'visible' : 'none');};
+facToggle.onchange   =()=> { if(map.getLayer('fac')) map.setLayoutProperty('fac','visibility',facToggle.checked?'visible':'none'); };
+usgsToggle.onchange  =()=> { if(map.getLayer('usgs')) map.setLayoutProperty('usgs','visibility',usgsToggle.checked?'visible':'none'); };
+gdacsToggle.onchange =()=> { if(map.getLayer('gdacs')) map.setLayoutProperty('gdacs','visibility',gdacsToggle.checked?'visible':'none'); };
+roadsToggle.onchange =()=> { if(map.getLayer('roads')) map.setLayoutProperty('roads','visibility',roadsToggle.checked?'visible':'none'); };
+popToggle.onchange   =()=> { if(map.getLayer('worldcover')) map.setLayoutProperty('worldcover','visibility',popToggle.checked?'visible':'none'); };
+satToggle.onchange   =()=> { if(map.getLayer('satellite')) map.setLayoutProperty('satellite','visibility',satToggle.checked?'visible':'none'); };
 
-/* ------------- Terrain toggle ------------- */
+/* ---------------- Terrain toggle ---------------- */
 function enableTerrain(){
   if(!map.getSource('dem')){
     map.addSource('dem',{type:'raster-dem',url:'mapbox://mapbox.terrain-rgb',tileSize:512,maxzoom:14});
@@ -356,62 +497,48 @@ function disableTerrain(){
   if(map.getLayer('hillshade')) map.setLayoutProperty('hillshade','visibility','none');
 }
 
-/* ------------- Kick-off ------------- */
+/* ---------------- Kick-off ---------------- */
 map.on('load',()=>{
   enableTerrain();
+
+  // Facilities + hazards
   loadFacilities();
   loadUSGS();
   loadGDACS();
-// Add Mapbox Streets source if not already included by style
-if (!map.getSource('mapbox-streets')) {
-  map.addSource('mapbox-streets', {
-    type: 'vector',
-    url: 'mapbox://mapbox.mapbox-streets-v8'
+
+  // Mapbox Streets for roads
+  if (!map.getSource('mapbox-streets')) {
+    map.addSource('mapbox-streets', { type: 'vector', url: 'mapbox://mapbox.mapbox-streets-v8' });
+  }
+  map.addLayer({
+    id: 'roads',
+    type: 'line',
+    source: 'mapbox-streets',
+    'source-layer': 'road',
+    layout: { visibility:'visible' },
+    paint: { 'line-color': '#555', 'line-width': 1 }
   });
-}
 
-map.addLayer({
-  'id': 'roads',
-  'type': 'line',
-  'source': 'mapbox-streets',
-  'source-layer': 'road',
-  'layout': {'visibility':'visible'},
-  'paint': {
-    'line-color': '#555',
-    'line-width': 1
-  }
-});
-map.addSource('worldpop', {
-  'type': 'raster',
-  'tiles': [
-    'https://data.humdata.org/hxlproxy/api/tilejson/1.0/population/{z}/{x}/{y}.png'
-  ],
-  'tileSize': 256
-});
+  // ESA WorldCover raster (population/land cover stand-in)
+  // 2021 layer; change to WORLDCOVER_2022_MAP if desired
+  map.addSource('worldcover', {
+    type: 'raster',
+    tiles: [
+      'https://services.terrascope.be/wmts/v2?service=WMTS&request=GetTile&version=1.0.0&layer=WORLDCOVER_2021_MAP&style=default&format=image/png&tilematrixset=GoogleMapsCompatible&TileMatrix={z}&TileCol={x}&TileRow={y}'
+    ],
+    tileSize: 256
+  });
+  map.addLayer({
+    id: 'worldcover',
+    type: 'raster',
+    source: 'worldcover',
+    layout: { visibility: 'visible' },
+    paint: { 'raster-opacity': 0.5 }
+  });
 
-map.addLayer({
-  'id': 'worldpop',
-  'type': 'raster',
-  'source': 'worldpop',
-  'layout': { 'visibility': 'visible' },
-  'paint': { 'raster-opacity': 0.5 }
-});
-// --- Mapbox Satellite Imagery ---
-map.addSource('satellite', {
-  'type': 'raster',
-  'url': 'mapbox://mapbox.satellite',
-  'tileSize': 256
-});
-
-map.addLayer({
-  'id': 'satellite',
-  'type': 'raster',
-  'source': 'satellite',
-  'layout': {
-    'visibility': 'none'   // start hidden until toggle
-  }
-});  
-
+  // Satellite imagery
+  map.addSource('satellite', { type: 'raster', url: 'mapbox://mapbox.satellite', tileSize: 256 });
+  map.addLayer({ id: 'satellite', type: 'raster', source: 'satellite', layout: { visibility: 'none' } });
 });
 </script>
 </body>

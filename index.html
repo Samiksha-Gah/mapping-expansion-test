@@ -92,7 +92,7 @@
 mapboxgl.accessToken='pk.eyJ1Ijoic2FtaWtzaGFnYWhlcndhciIsImEiOiJjbWVnOHVjamcxNHFwMm5xNHJscHdxYjdqIn0.x2xdpJyWndbT007njbAKEA';
 
 const GO_BASE = 'https://goadmin.ifrc.org/api/v2';
-const GO_TOKEN = 'YOUR_API_TOKEN'; // <-- replace
+const GO_TOKEN = 'a0aefae0c20a1372e1cf058b7b3df53c87cffabc'; // <-- replace
 
 const USGS='https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_day.geojson';
 const GDACS='https://corsproxy.io/?https://www.gdacs.org/gdacsapi/api/events/geteventlist/';  // simple proxy
@@ -138,7 +138,7 @@ function mapLocalUnitToFeature(r) {
 
   const p = {
     lat: lat,
-    lon: lon
+    lon: lon,
     id: r.id,
     name: r.english_branch_name || r.local_branch_name || 'Local Unit',
     facility_name: r.english_branch_name || r.local_branch_name || 'Local Unit',

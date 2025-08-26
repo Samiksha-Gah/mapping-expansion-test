@@ -133,51 +133,35 @@ async function fetchAllIFRC(url) {
 function mapLocalUnitToFeature(r) {
   let lon = null, lat = null;
   const lg = r.location_geojson;
-  if (lg && typeof lg === 'object') {
-    if (lg.type === 'Feature' && lg.geometry?.type === 'Point' && Array.isArray(lg.geometry.coordinates)) {
-      [lon, lat] = lg.geometry.coordinates;
-    } else if (lg.type === 'Point' && Array.isArray(lg.coordinates)) {
-      [lon, lat] = lg.coordinates;
-    }
+
+  // Extract coordinates
+  if (lg?.type === 'Point' && Array.isArray(lg.coordinates)) {
+    [lon, lat] = lg.coordinates;
   }
-  if ((lon == null || lat == null) && r.location_json && typeof r.location_json.lng === 'number' && typeof r.location_json.lat === 'number') {
-    lon = r.location_json.lng;
-    lat = r.location_json.lat;
-  }
+
   if (lon == null || lat == null) return null;
 
-  const country = r.country_details?.name || null;
-  const typeName = r.health?.health_facility_type_details?.name || r.type_details?.name || null;
-
-  const funcName = (r.health_details?.functionality_details?.name || '').toLowerCase();
+  // Determine functionality status
+  const funcName = (r.health_details?.functionality_details?.name || 'unknown').toLowerCase();
   let status = 'unknown';
   if (funcName.includes('fully')) status = 'functional';
   else if (funcName.includes('partial')) status = 'partial';
-  else if (funcName.includes('non') || funcName.includes('not')) status = 'nonfunctional';
+  else if (funcName.includes('not')) status = 'nonfunctional';
 
+  // Map properties
   const p = {
     id: r.id,
-    country,
-    facility_name: r.english_branch_name || r.local_branch_name || 'Local Unit',
-    location_of_facility: r.address_en || r.address_loc || null,
+    country: r.country_details?.name || null,
+    facility_name: r.local_branch_name || r.english_branch_name || 'Local Unit',
+    address: r.address_loc || r.address_en || null,
     lat, lon,
-    health_facility_type: typeName,
+    health_facility_type: r.type_details?.name || null,
     functionality: status,
-    general_medical_services: r.health_details?.general_medical_services_details?.map(s => s.name.toLowerCase()).join(', ') || 'none',
-    specialized_services: r.health_details?.specialized_medical_beyond_primary_level_details?.map(s => s.name.toLowerCase()).join(', ') || 'none',
-    blood_services: r.health_details?.blood_services_details?.map(s => s.name.toLowerCase()).join(', ') || 'none',
-    total_hr: r.health_details?.total_number_of_human_resource || 0,
-    general_practitioners: r.health_details?.general_practitioner || 0,
-    specialists: r.health_details?.specialist || 0,
-    residents_doctors: r.health_details?.residents_doctor || 0,
-    nurses: r.health_details?.nurse || 0,
-    dentists: r.health_details?.dentist || 0,
-    nursing_aids: r.health_details?.nursing_aid || 0,
-    midwives: r.health_details?.midwife || 0,
-    last_updated: r.modified_at || r.created_at || null,
-    confidence: r.validated ? 'validated' : (r.draft ? 'draft' : null),
+    email: r.email || null,
+    phone: r.phone || null,
     contact: r.email || r.phone || r.focal_person_en || r.focal_person_loc || null,
-    _raw: r
+    last_updated: r.modified_at || null,
+    confidence: r.validated ? 'validated' : 'draft',
   };
 
   return { type: 'Feature', geometry: { type: 'Point', coordinates: [lon, lat] }, properties: p };
@@ -208,7 +192,7 @@ function populateTypeFilter() {
       const sel = document.getElementById('typeFilter');
       if (!sel) return;
       const types = data.type.map(t => t.name).filter(Boolean);
-      sel.innerHTML = types.length ? ['<option value="">All types</option>', ...types.map(t => `<option>${t}</option>`)].join('') : '<option value="">No types available</option>';
+      sel.innerHTML = ['<option value="">All types</option>', ...types.map(t => `<option>${t}</option>`)].join('');
     })
     .catch(err => console.error("Error fetching types:", err));
 }

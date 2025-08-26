@@ -134,21 +134,12 @@ function mapLocalUnitToFeature(r) {
   let lon = null, lat = null;
   const lg = r.location_geojson;
 
-  // Extract coordinates
   if (lg?.type === 'Point' && Array.isArray(lg.coordinates)) {
     [lon, lat] = lg.coordinates;
   }
 
   if (lon == null || lat == null) return null;
 
-  // Determine functionality status
-  const funcName = (r.health_details?.functionality_details?.name || 'unknown').toLowerCase();
-  let status = 'unknown';
-  if (funcName.includes('fully')) status = 'functional';
-  else if (funcName.includes('partial')) status = 'partial';
-  else if (funcName.includes('not')) status = 'nonfunctional';
-
-  // Map properties
   const p = {
     id: r.id,
     country: r.country_details?.name || null,
@@ -156,7 +147,7 @@ function mapLocalUnitToFeature(r) {
     address: r.address_loc || r.address_en || null,
     lat, lon,
     health_facility_type: r.type_details?.name || null,
-    functionality: status,
+    functionality: (r.health_details?.functionality_details?.name || 'unknown').toLowerCase(),
     email: r.email || null,
     phone: r.phone || null,
     contact: r.email || r.phone || r.focal_person_en || r.focal_person_loc || null,
@@ -169,16 +160,19 @@ function mapLocalUnitToFeature(r) {
 
 async function loadFacilities() {
   try {
-    const params = new URLSearchParams({ validated: 'true', draft: 'false', limit: '500' });
-    const url = `${GO_BASE}/local-units/?${params.toString()}`;
+    const url = `${GO_BASE}/local-units/?validated=true&draft=false&limit=500`;
     const rows = await fetchAllIFRC(url);
-    const feats = rows.map(mapLocalUnitToFeature).filter(Boolean);
-    facAll = { type: 'FeatureCollection', features: feats };
 
-    populateCountryFilter();  // Populate filter with new data
-    populateTypeFilter();     // Populate type filter dynamically
-    applyFilters();           // Apply user-defined filters
-    addFacilityLayer();       // Add layer to map
+    console.log("API Response for Facilities:", rows); // Log the API response
+
+    const feats = rows.map(mapLocalUnitToFeature).filter(Boolean);
+    console.log("Mapped Features:", feats); // Log the mapped features
+
+    facAll = { type: 'FeatureCollection', features: feats };
+    populateCountryFilter();
+    populateTypeFilter();
+    applyFilters();
+    addFacilityLayer();
   } catch (e) {
     console.error(e);
     q('summary').textContent = 'Failed to load IFRC GO Local Units';

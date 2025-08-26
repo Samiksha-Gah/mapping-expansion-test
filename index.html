@@ -149,44 +149,34 @@ function mapLocalUnitToFeature(r) {
   const country = r.country_details?.name || null;
   const typeName = r.health?.health_facility_type_details?.name || r.type_details?.name || null;
 
+  const funcName = (r.health_details?.functionality_details?.name || '').toLowerCase();
+  let status = 'unknown';
+  if (funcName.includes('fully')) status = 'functional';
+  else if (funcName.includes('partial')) status = 'partial';
+  else if (funcName.includes('non') || funcName.includes('not')) status = 'nonfunctional';
+
   const p = {
     id: r.id,
-    national_society: r.country_details?.name || null, // Adjust if you have a direct field
     country,
     facility_name: r.english_branch_name || r.local_branch_name || 'Local Unit',
     location_of_facility: r.address_en || r.address_loc || null,
     lat, lon,
-    district: r.address_loc || null, // Adjust if there's a specific field for district
     health_facility_type: typeName,
-    affiliation: r.affiliation_details?.name || null,
-    functionality: (r.health?.functionality_details?.name || 'unknown').toLowerCase(),
-    primary_health_care_info: r.health?.primary_health_care_center_details?.name || null,
-    inpatient_care: !!r.health?.is_in_patient_capacity,
-    warehousing: !!r.health?.is_warehousing,
-    cold_chain: !!r.health?.is_cold_chain,
-    general_medical_services: r.health?.general_medical_services_details?.map(s => s.name).join(', ') || 'none',
-    specialized_services: r.health?.specialized_medical_beyond_primary_level_details?.map(s => s.name).join(', ') || 'none',
-    blood_services: r.health?.blood_services_details?.map(s => s.name).join(', ') || 'none',
-    total_hr: r.health?.total_number_of_human_resource || 0,
-    general_practitioners: r.health?.general_practitioner || 0,
-    specialists: r.health?.specialist || 0,
-    residents_doctors: r.health?.residents_doctor || 0,
-    nurses: r.health?.nurse || 0,
-    dentists: r.health?.dentist || 0,
-    nursing_aids: r.health?.nursing_aid || 0,
-    midwives: r.health?.midwife || 0,
-    hospital_type: r.health?.hospital_type_details?.name || null,
-    teaching_hospital: !!r.health?.is_teaching_hospital,
-    maximum_capacity: r.health?.maximum_capacity || null,
-    isolation_rooms: r.health?.number_of_isolation_rooms || null,
-    speciality: r.speciality || null,
-    other_services: r.other_services || null,
-    feedback: r.feedback || null,
-    ambulance_type_a: r.ambulance_type_a || null,
-    ambulance_type_b: r.ambulance_type_b || null,
-    visibility_of_data: r.visibility_display || null,
+    functionality: status,
+    general_medical_services: r.health_details?.general_medical_services_details?.map(s => s.name.toLowerCase()).join(', ') || 'none',
+    specialized_services: r.health_details?.specialized_medical_beyond_primary_level_details?.map(s => s.name.toLowerCase()).join(', ') || 'none',
+    blood_services: r.health_details?.blood_services_details?.map(s => s.name.toLowerCase()).join(', ') || 'none',
+    total_hr: r.health_details?.total_number_of_human_resource || 0,
+    general_practitioners: r.health_details?.general_practitioner || 0,
+    specialists: r.health_details?.specialist || 0,
+    residents_doctors: r.health_details?.residents_doctor || 0,
+    nurses: r.health_details?.nurse || 0,
+    dentists: r.health_details?.dentist || 0,
+    nursing_aids: r.health_details?.nursing_aid || 0,
+    midwives: r.health_details?.midwife || 0,
     last_updated: r.modified_at || r.created_at || null,
     confidence: r.validated ? 'validated' : (r.draft ? 'draft' : null),
+    contact: r.email || r.phone || r.focal_person_en || r.focal_person_loc || null,
     _raw: r
   };
 
@@ -265,7 +255,7 @@ function renderFacility(f) {
     </div>
     <div class="section"><h3>Services</h3>
       ${['general_medical_services', 'specialized_services', 'blood_services']
-        .map(k => `<div class="kv"><b>${k.replace('_', ' ')}</b>: ${fmt(p[k])}</div>`).join(' ')}
+        .map(k => `<span class="pill" style="background:${fmt(p[k]) !== 'none' ? '#e6f4ea' : '#f3f4f6'};color:${fmt(p[k]) !== 'none' ? '#166534' : '#374151'}">${k.replace('_services', '')}: ${fmt(p[k]) !== 'none' ? 'yes' : 'no'}</span>`).join(' ')}
     </div>
     <div class="section"><h3>Staff</h3>
       ${['total_hr', 'general_practitioners', 'specialists', 'residents_doctors', 'nurses', 'dentists', 'nursing_aids', 'midwives']
@@ -275,6 +265,18 @@ function renderFacility(f) {
       <div class="kv"><b>Contact</b> ${fmt(p.contact)}</div>
       <div class="kv"><b>Confidence</b> ${fmt(p.confidence)}</div>
     </div>`;
+}
+
+function populateTypeFilter() {
+  fetch(`${GO_BASE}/local-units-options/`)
+    .then(res => res.json())
+    .then(data => {
+      const sel = q('typeFilter');
+      if (!sel) return;
+      const types = data.type.map(t => t.name).filter(Boolean);
+      sel.innerHTML = types.length ? ['<option value="">All types</option>', ...types.map(t => `<option>${t}</option>`)].join('') : '<option value="">No types available</option>';
+    })
+    .catch(err => console.error("Error fetching types:", err));
 }
 
 function highlightNone(){

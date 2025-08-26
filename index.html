@@ -126,67 +126,66 @@ async function fetchAllIFRC(url) {
 
 // Map a list item → minimal feature; health details are added on click.
 function mapLocalUnitToFeature(r) {
-  let lon = null, lat = null;
-  const lg = r.location_geojson;
-  if (lg?.type === 'Point' && Array.isArray(lg.coordinates)) {
-    [lon, lat] = lg.coordinates;
-  }
-  if (lon == null || lat == null) return null;
+let lon = null, lat = null;
+const lg = r.location_geojson;
+if (lg?.type === 'Point' && Array.isArray(lg.coordinates)) {
+[lon, lat] = lg.coordinates;
+}
+if (lon == null || lat == null) return null;
 
-  const unitTypeName = r.type_details?.name || null; // Administrative, Health Care, etc.
-  const healthTypeName = r.health_details?.health_facility_type_details?.name || null; // Blood Center, Hospital ...
+const unitTypeName = r.type_details?.name || null;
+const healthTypeName = r.health_details?.health_facility_type_details?.name || null;
 
-  const p = {
-    lat: lat,
-    lon: lon,
-    id: r.id,
-    name: r.english_branch_name || r.local_branch_name || 'Local Unit',
-    facility_name: r.english_branch_name || r.local_branch_name || 'Local Unit',
-    country: r.country_details?.name || null,
-    iso3: r.country_details?.iso3 || null,
+const p = {
+lat: lat,
+lon: lon, // <-- ADD THIS COMMA
+id: r.id,
+name: r.english_branch_name || r.local_branch_name || 'Local Unit',
+facility_name: r.english_branch_name || r.local_branch_name || 'Local Unit',
+country: r.country_details?.name || null,
+iso3: r.country_details?.iso3 || null,
+type_name: unitTypeName,
+type: (unitTypeName || '').toLowerCase().replace(/\s+/g,'_'),
+health_facility_type: healthTypeName || null,
 
-    type_name: unitTypeName,
-    type: (unitTypeName || '').toLowerCase().replace(/\s+/g,'_'),
-    health_facility_type: healthTypeName || null,
+address: r.address_en || r.address_loc || null,
+contact: r.email || r.phone || r.focal_person_en || r.focal_person_loc || null,
+last_updated: r.modified_at || null,
+confidence: r.validated ? 'validated' : (r.draft ? 'draft' : null),
 
-    address: r.address_en || r.address_loc || null,
-    contact: r.email || r.phone || r.focal_person_en || r.focal_person_loc || null,
-    last_updated: r.modified_at || null,
-    confidence: r.validated ? 'validated' : (r.draft ? 'draft' : null),
+status: 'unknown',
+beds_total: null,
+inpatient_capable: false,
+warehousing: false,
+cold_chain: false,
 
-    status: 'unknown',
-    beds_total: null,
-    inpatient_capable: false,
-    warehousing: false,
-    cold_chain: false,
+hr_total: null,
+hr_gp: null,
+hr_specialist: null,
+hr_residents: null,
+hr_nurse: null,
+hr_dentist: null,
+hr_nursing_aid: null,
+hr_midwife: null,
 
-    // HR placeholders
-    hr_total: null,
-    hr_gp: null,
-    hr_specialist: null,
-    hr_residents: null,
-    hr_nurse: null,
-    hr_dentist: null,
-    hr_nursing_aid: null,
-    hr_midwife: null,
+svc_emergency: false,
+svc_maternity: false,
+svc_surgery: false,
+svc_ncd: false,
+svc_mhpss: false,
+svc_lab: false,
+svc_radiology: false,
+svc_vaccination: false,
+svc_pharmacy: false,
+svc_isolation_id: false,
 
-    // Service flags
-    svc_emergency: false,
-    svc_maternity: false,
-    svc_surgery: false,
-    svc_ncd: false,
-    svc_mhpss: false,
-    svc_lab: false,
-    svc_radiology: false,
-    svc_vaccination: false,
-    svc_pharmacy: false,
-    svc_isolation_id: false,
-
-    _enriched: false
+_enriched: false
   };
 
-  return { type: 'Feature', geometry: { type: 'Point', coordinates: [lon, lat] }, properties: p };
+return { type: 'Feature', geometry: { type: 'Point', coordinates: [lon, lat] }, properties: p };
 }
+
+
 
 async function fetchIFRCDetail(id) {
   const url = `${GO_BASE}/local-units/${id}/`;
